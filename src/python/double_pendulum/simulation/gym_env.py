@@ -175,3 +175,167 @@ class double_pendulum_dynamics_func:
             )
 
         return observation
+
+
+# TODO create a builder class for DoublePendulum/CustomEnv to generate gym.make("DoublePendulumDFKIRIC{suffix}-v0")
+
+# Currently building a single default environment where the arguments already have default values
+# GPT
+# def build_default_double_pendulum_env(
+#     simulator,
+#     dt=0.01,
+#     integrator="runge_kutta",
+#     robot="double_pendulum",
+#     state_representation=2,
+#     max_velocity=20.0,
+#     torque_limit=[5.0, 5.0],
+#     scaling = True
+# ):
+#     dynamics_func = double_pendulum_dynamics_func(
+#         simulator,
+#         dt=dt,
+#         integrator=integrator,
+#         robot=robot,
+#         state_representation=state_representation,
+#         max_velocity=max_velocity,
+#         torque_limit=torque_limit,
+#         scaling = scaling
+#     )
+
+#     def reward_func(state, action):
+#         return 0.0
+
+#     def terminated_func(state):
+#         return False
+
+#     def reset_func():
+#         return np.array([0.0, 0.0, 0.0, 0.0])
+
+#     env = CustomEnv(
+#         dynamics_func,
+#         reward_func,
+#         terminated_func,
+#         reset_func,
+#         obs_space=gym.spaces.Box(
+#             np.array([-1.0, -1.0, -1.0, -1.0]), np.array([1.0, 1.0, 1.0, 1.0])
+#         ),
+#         act_space=gym.spaces.Box(np.array([-1.0, -1.0]), np.array([1.0, 1.0])),
+#         max_episode_steps=1000,
+#         scaling = scaling
+#     )
+
+#     return env
+
+from double_pendulum.model.model_parameters import model_parameters
+from double_pendulum.model.symbolic_plant import SymbolicDoublePendulum
+from double_pendulum.simulation.simulation import Simulator
+
+def build_default_double_pendulum_pendubot_env() -> CustomEnv:
+
+    torque_limit = [5.0, 0.0]
+
+    # HACK hardcoding the model parameters for now
+    # related ymal file in
+    # data/system_identification/identified_parameters/design_A.0/model_2.0/model_parameters.yml
+    # I1: 0.053470810264216295
+    # I2: 0.02392374528789766
+    # Ir: 7.659297952841183e-05
+    # b1: 0.001
+    # b2: 0.001
+    # cf1: 0.093
+    # cf2: 0.078
+    # g: 9.81
+    # gr: 6.0
+    # l1: 0.3
+    # l2: 0.2
+    # m1: 0.5593806151425046
+    # m2: 0.6043459469186889
+    # r1: 0.3
+    # r2: 0.18377686083653508
+    # tl1: 10.0
+    # tl2: 10.0
+
+    mpar_dict = {
+        "I1": 0.053470810264216295,
+        "I2": 0.02392374528789766,
+        "Ir": 7.659297952841183e-05,
+        "b1": 0.001,
+        "b2": 0.001,
+        "cf1": 0.093,
+        "cf2": 0.078,
+        "g": 9.81,
+        "gr": 6.0,
+        "l1": 0.3,
+        "l2": 0.2,
+        "m1": 0.5593806151425046,
+        "m2": 0.6043459469186889,
+        "r1": 0.3,
+        "r2": 0.18377686083653508,
+        "tl1": 10.0,
+        "tl2": 10.0,
+        }
+
+    #mpar = model_parameters(filepath=model_par_path)
+    mpar = model_parameters()
+    mpar.load_dict(mpar_dict)
+
+    mpar.set_motor_inertia(0.0)
+    mpar.set_damping([0.0, 0.0])
+    mpar.set_cfric([0.0, 0.0])
+    mpar.set_torque_limit(torque_limit)
+    dt = 0.002
+    integrator = "runge_kutta"
+
+    plant = SymbolicDoublePendulum(model_pars=mpar)
+    simulator = Simulator(plant=plant)
+
+
+    # learning environment parameters
+    state_representation = 2
+    obs_space = obs_space = gym.spaces.Box(
+        np.array([-1.0, -1.0, -1.0, -1.0]), np.array([1.0, 1.0, 1.0, 1.0])
+    )
+    act_space = gym.spaces.Box(np.array([-1]), np.array([1]))
+    max_steps = 100
+
+
+    dynamics_func = double_pendulum_dynamics_func(
+        simulator=simulator,
+        dt=dt,
+        integrator=integrator,
+        robot="pendubot",
+        state_representation=state_representation,
+    )
+
+    def reward_func(observation, action):
+        return -(
+            observation[0] ** 2.0
+            + (observation[1] + 1.0) * (observation[1] - 1.0)
+            + observation[2] ** 2.0
+            + observation[3] ** 2.0
+            + 0.01 * action[0] ** 2.0
+        )
+
+
+    def terminated_func(observation):
+        return False
+
+
+    def noisy_reset_func():
+        rand = np.random.rand(4) * 0.01
+        rand[2:] = rand[2:] - 0.05
+        observation = [-1.0, -1.0, 0.0, 0.0] + rand
+        return np.float32(observation)
+
+
+    env = CustomEnv(
+        dynamics_func=dynamics_func,
+        reward_func=reward_func,
+        terminated_func=terminated_func,
+        reset_func=noisy_reset_func,
+        obs_space=obs_space,
+        act_space=act_space,
+        max_episode_steps=100,
+    )
+
+    return env
