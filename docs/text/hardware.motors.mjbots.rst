@@ -1,9 +1,0 @@
-MJBots
-------
-
-Initial Setup
-~~~~~~~~~~~~~
-
-
-Communication
-~~~~~~~~~~~~~
